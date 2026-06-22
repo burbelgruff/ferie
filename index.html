@@ -1020,6 +1020,9 @@ const WEEKS_SHOWN = 5;
 
 // ── Geocoding ─────────────────────────────────────────────────
 const geocodeCache = JSON.parse(localStorage.getItem("ferie-geocache") || "{}");
+// Remove any null entries so failed lookups are retried
+Object.keys(geocodeCache).forEach(k => { if (geocodeCache[k] === null) delete geocodeCache[k]; });
+localStorage.setItem("ferie-geocache", JSON.stringify(geocodeCache));
 
 async function geocode(query) {
   if (!query) return null;
@@ -1027,12 +1030,15 @@ async function geocode(query) {
   if (Object.prototype.hasOwnProperty.call(geocodeCache, key)) return geocodeCache[key];
   try {
     const res = await fetch(
-      `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1`
+      `https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=1`
     );
     const data = await res.json();
-    const result = data.length ? [parseFloat(data[0].lat), parseFloat(data[0].lon)] : null;
-    geocodeCache[key] = result;
-    localStorage.setItem("ferie-geocache", JSON.stringify(geocodeCache));
+    const f = data.features && data.features[0];
+    const result = f ? [f.geometry.coordinates[1], f.geometry.coordinates[0]] : null;
+    if (result !== null) {
+      geocodeCache[key] = result;
+      localStorage.setItem("ferie-geocache", JSON.stringify(geocodeCache));
+    }
     return result;
   } catch {
     return null;

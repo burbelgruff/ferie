@@ -1,0 +1,2281 @@
+<!doctype html>
+<html lang="nb">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ferieplanlegger</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --fly:        #3b82f6;
+      --tog:        #0d9488;
+      --hotell:     #10b981;
+      --aktivitet:  #f59e0b;
+      --transport:  #8b5cf6;
+      --restaurant: #ef4444;
+      --annet:      #6b7280;
+    }
+
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #f5f4f0;
+      color: #1a1a1a;
+      min-height: 100vh;
+    }
+
+    .shell { display: flex; flex-direction: column; height: 100vh; }
+
+    /* ── Topbar ── */
+    .topbar {
+      display: flex; align-items: center; gap: 1rem;
+      padding: 0 1.25rem; height: 50px;
+      background: #1e3a5f; color: #e8f0f8; flex-shrink: 0;
+    }
+    .topbar h1 { font-size: 1rem; font-weight: 700; flex: 1; }
+    .topbar-btn {
+      background: #2d6a9f; color: #fff; border: none;
+      border-radius: 6px; font-size: 0.85rem; font-weight: 600;
+      padding: 0.4rem 0.95rem; cursor: pointer; transition: background 0.15s;
+    }
+    .topbar-btn:hover { background: #3a7fbf; }
+    .topbar-btn.secondary {
+      background: transparent; border: 1px solid #4a7a9f; color: #b8d4ea;
+    }
+    .topbar-btn.secondary:hover { background: rgba(255,255,255,0.08); }
+
+    .view-toggle {
+      display: flex; background: rgba(255,255,255,0.12);
+      border-radius: 6px; overflow: hidden;
+    }
+    .view-toggle-btn {
+      background: transparent; border: none; color: #b8d4ea;
+      font-size: 0.8rem; font-weight: 600;
+      padding: 0.32rem 0.7rem; cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+    }
+    .view-toggle-btn.active { background: #2d6a9f; color: #fff; }
+
+    /* ── Main ── */
+    .main { display: flex; flex: 1; min-height: 0; }
+
+    /* ── Calendar 3-column view ── */
+    .cal-view { display: flex; flex: 1; min-height: 0; }
+    .cal-view.hidden { display: none; }
+
+    /* ── Left: event list ── */
+    .event-list-panel {
+      width: 270px; flex-shrink: 0;
+      border-right: 1px solid #e0e0e0; background: #fff;
+      display: flex; flex-direction: column; overflow: hidden;
+    }
+    .event-list-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0.7rem 1rem; border-bottom: 1px solid #eee; flex-shrink: 0;
+    }
+    .event-list-header h3 { font-size: 0.9rem; font-weight: 700; color: #333; }
+    .new-event-btn {
+      background: #2d6a9f; color: #fff; border: none;
+      border-radius: 5px; width: 28px; height: 28px;
+      font-size: 1.1rem; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: background 0.15s;
+    }
+    .new-event-btn:hover { background: #3a7fbf; }
+
+    .event-list-body { flex: 1; overflow-y: auto; padding: 0.4rem; }
+
+    .list-section-title {
+      font-size: 0.66rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.07em;
+      color: #999; padding: 0.6rem 0.55rem 0.25rem;
+    }
+
+    .list-section-title.unscheduled { color: #b08800; }
+
+    .event-list-item {
+      border-radius: 6px; border-left: 3px solid #ddd;
+      padding: 0.45rem 0.6rem; margin-bottom: 0.3rem;
+      background: #fafafa; cursor: pointer; position: relative;
+      transition: background 0.12s, box-shadow 0.12s;
+    }
+    .event-list-item.on-selected-date { background: #fef9c3; }
+    .event-list-item.on-selected-date:hover { background: #fef08a; }
+    .event-list-item:hover { background: #f0f6ff; }
+    .event-list-item.active { background: #e8f0f8; box-shadow: 0 0 0 1.5px #2d6a9f; }
+    .event-list-item.unscheduled { background: #fffbe9; border-left-style: dashed; }
+    .event-list-item.unscheduled:hover { background: #fff7d0; }
+
+    .event-list-item.fly        { border-left-color: var(--fly); }
+    .event-list-item.tog        { border-left-color: var(--tog); }
+    .event-list-item.hotell     { border-left-color: var(--hotell); }
+    .event-list-item.aktivitet  { border-left-color: var(--aktivitet); }
+    .event-list-item.transport  { border-left-color: var(--transport); }
+    .event-list-item.restaurant { border-left-color: var(--restaurant); }
+    .event-list-item.annet      { border-left-color: var(--annet); }
+
+    .event-list-title {
+      font-size: 0.84rem; font-weight: 600; color: #222;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .event-list-meta {
+      font-size: 0.72rem; color: #888; margin-top: 2px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .event-list-date-badge {
+      font-size: 0.68rem; font-weight: 700; color: #2d6a9f;
+      background: #e8f0f8; border-radius: 3px;
+      padding: 1px 5px; display: inline-block; margin-bottom: 3px;
+    }
+    .event-list-lock {
+      position: absolute; top: 6px; right: 6px;
+      font-size: 0.7rem; color: #999;
+    }
+    .event-list-empty {
+      color: #bbb; font-size: 0.8rem; font-style: italic;
+      text-align: center; padding: 1rem 0.5rem;
+    }
+
+    /* ── Center: calendar ── */
+    .cal-area {
+      flex: 1; display: flex; flex-direction: column;
+      padding: 1.1rem 1rem; min-width: 0; min-height: 0; overflow: hidden;
+    }
+    .cal-mode { overflow-y: auto; }
+    .legend {
+      display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.7rem;
+    }
+    .legend-item {
+      display: flex; align-items: center; gap: 4px;
+      font-size: 0.72rem; color: #555;
+    }
+    .legend-dot { width: 9px; height: 9px; border-radius: 2px; }
+
+    .cal-nav {
+      display: flex; align-items: center; gap: 1rem; margin-bottom: 0.9rem;
+    }
+    .cal-nav h2 { font-size: 1.05rem; font-weight: 700; flex: 1; text-align: center; }
+    .nav-btn {
+      background: #fff; border: 1.5px solid #ddd; border-radius: 6px;
+      width: 32px; height: 32px; font-size: 1rem; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: background 0.1s;
+    }
+    .nav-btn:hover { background: #eee; }
+
+    .cal-grid {
+      display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px;
+    }
+    .cal-day-header {
+      text-align: center; font-size: 0.7rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.05em;
+      color: #888; padding: 0.2rem 0;
+    }
+    .cal-cell {
+      background: #fff; border-radius: 7px; min-height: 78px;
+      padding: 0.32rem 0.4rem; cursor: pointer;
+      transition: box-shadow 0.15s; border: 1.5px solid transparent;
+      position: relative;
+    }
+    .cal-cell:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.1); border-color: #ddd; }
+    .cal-cell.today { border-color: #2d6a9f; }
+    .cal-cell.selected { border-color: #2d6a9f; box-shadow: 0 0 0 3px rgba(45,106,159,0.15); }
+    .cal-cell.other-month { background: #f9f9f7; opacity: 0.5; }
+    .cal-cell.drop-target { background: #dbeafe; border-color: #2d6a9f; }
+
+    .cell-date {
+      font-size: 0.78rem; font-weight: 600; color: #555; margin-bottom: 0.25rem;
+    }
+    .cal-cell.today .cell-date {
+      background: #2d6a9f; color: #fff; border-radius: 50%;
+      width: 20px; height: 20px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.72rem;
+    }
+
+    .event-pills { display: flex; flex-direction: column; gap: 2px; }
+    .event-pill {
+      font-size: 0.66rem; font-weight: 600; padding: 1px 4px;
+      border-radius: 3px; color: #fff;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      max-width: 100%; cursor: pointer;
+    }
+    .event-pill.active { box-shadow: 0 0 0 1.5px #1a1a1a; }
+    .event-pill:hover { opacity: 0.85; }
+    .event-pill.fly        { background: var(--fly); }
+    .event-pill.tog        { background: var(--tog); }
+    .event-pill.hotell     { background: var(--hotell); }
+    .event-pill.aktivitet  { background: var(--aktivitet); }
+    .event-pill.transport  { background: var(--transport); }
+    .event-pill.restaurant { background: var(--restaurant); }
+    .event-pill.annet      { background: var(--annet); }
+
+    .more-events { font-size: 0.62rem; color: #888; margin-top: 1px; }
+
+    /* ── Right: editor ── */
+    .editor-panel {
+      width: 380px; flex-shrink: 0;
+      border-left: 1px solid #e0e0e0; background: #fff;
+      display: flex; flex-direction: column; overflow: hidden;
+    }
+    .editor-empty {
+      flex: 1; display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      color: #bbb; font-size: 0.88rem; text-align: center;
+      padding: 2rem; gap: 0.75rem;
+    }
+    .editor-empty.hidden { display: none; }
+    .editor-empty-icon { font-size: 2rem; opacity: 0.5; }
+
+    .editor-frame {
+      flex: 1; display: none; flex-direction: column;
+      overflow: hidden; min-height: 0;
+    }
+    .editor-frame.visible { display: flex; }
+
+    .editor-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0.85rem 1rem 0.7rem;
+      border-bottom: 1px solid #eee; flex-shrink: 0; gap: 0.5rem;
+    }
+    .editor-header h3 {
+      font-size: 0.95rem; font-weight: 700; color: #1a1a1a;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .editor-close-btn {
+      background: none; border: none; font-size: 1.2rem;
+      color: #aaa; cursor: pointer; padding: 2px 6px;
+      border-radius: 4px; line-height: 1; flex-shrink: 0;
+    }
+    .editor-close-btn:hover { background: #eee; color: #555; }
+
+    .editor-body { flex: 1; overflow-y: auto; padding: 0.85rem 1rem; }
+
+    .editor-footer {
+      padding: 0.7rem 1rem; border-top: 1px solid #eee;
+      display: flex; gap: 0.5rem; align-items: center; flex-shrink: 0;
+      flex-wrap: wrap;
+    }
+
+    /* ── Editor tabs ── */
+    .editor-tabs {
+      display: flex; border-bottom: 2px solid #eee; margin-bottom: 0.9rem;
+    }
+    .editor-tab-btn {
+      background: none; border: none; border-bottom: 2px solid transparent;
+      margin-bottom: -2px; padding: 0.4rem 0.85rem;
+      font-size: 0.82rem; font-weight: 600; color: #888; cursor: pointer;
+    }
+    .editor-tab-btn.active { color: #2d6a9f; border-bottom-color: #2d6a9f; }
+    .editor-tab-panel { display: none; }
+    .editor-tab-panel.active { display: block; }
+
+    /* ── Form ── */
+    .field { margin-bottom: 0.8rem; }
+    .field label {
+      display: block; font-size: 0.78rem; font-weight: 600;
+      color: #444; margin-bottom: 0.3rem;
+    }
+    .field input, .field select, .field textarea {
+      width: 100%; border: 1.5px solid #ddd; border-radius: 6px;
+      padding: 0.45rem 0.6rem; font-size: 0.86rem;
+      font-family: inherit; transition: border-color 0.15s;
+    }
+    .field input:focus, .field select:focus, .field textarea:focus {
+      outline: none; border-color: #4a7fa5;
+    }
+    .field input.invalid { border-color: #ef4444; background: #fff5f5; }
+    .field textarea { min-height: 64px; resize: vertical; }
+    .field-row {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 0.55rem;
+    }
+    .field-opt { font-size: 0.72rem; font-weight: 400; color: #aaa; }
+    .field-required { color: #ef4444; margin-left: 2px; }
+
+    .date-suggestion-btn {
+      background: none; border: 1.5px dashed #b8d4ea;
+      color: #2d6a9f; border-radius: 6px;
+      padding: 0.35rem 0.7rem; font-size: 0.78rem; font-weight: 600;
+      cursor: pointer; margin: -0.3rem 0 0.7rem; width: 100%;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .date-suggestion-btn:hover { background: #f0f6ff; border-color: #4a7fa5; }
+
+    .date-empty-hint {
+      font-size: 0.72rem; color: #b08800;
+      background: #fffbe6; border-left: 3px solid #fcd34d;
+      padding: 0.35rem 0.55rem; border-radius: 4px;
+      margin: -0.3rem 0 0.7rem;
+    }
+
+    /* ── Address with mini map ── */
+    .address-row {
+      display: flex; gap: 0.4rem; align-items: stretch;
+    }
+    .address-row input { flex: 1; }
+    .address-search-btn {
+      background: #f0f6ff; border: 1.5px solid #b8d4ea;
+      color: #2d6a9f; border-radius: 6px;
+      padding: 0 0.7rem; font-size: 0.82rem; font-weight: 600;
+      cursor: pointer; flex-shrink: 0;
+      transition: background 0.15s;
+    }
+    .address-search-btn:hover { background: #e0eeff; }
+    .address-search-btn:disabled { opacity: 0.5; cursor: wait; }
+
+    .address-status {
+      font-size: 0.72rem; margin-top: 0.3rem; min-height: 1rem;
+    }
+    .address-status.ok   { color: #10b981; }
+    .address-status.err  { color: #ef4444; }
+    .address-status.busy { color: #888; font-style: italic; }
+
+    .mini-map-container {
+      border-radius: 7px; overflow: hidden; border: 1.5px solid #ddd;
+      margin-top: 0.5rem; height: 160px; display: none;
+    }
+    .mini-map-container.visible { display: block; }
+    #event-mini-map { width: 100%; height: 100%; }
+
+    /* ── Buttons ── */
+    .btn {
+      border: none; border-radius: 6px; font-size: 0.86rem;
+      font-weight: 600; padding: 0.5rem 1.05rem;
+      cursor: pointer; transition: background 0.15s, opacity 0.15s;
+    }
+    .btn-primary  { background: #2d6a9f; color: #fff; }
+    .btn-primary:hover { background: #235580; }
+    .btn-primary:disabled { opacity: 0.55; cursor: not-allowed; }
+    .btn-danger   { background: #ef4444; color: #fff; }
+    .btn-danger:hover  { background: #dc2626; }
+    .btn-ghost {
+      background: none; color: #2d6a9f; border: 1.5px solid #b8d4ea;
+    }
+    .btn-ghost:hover { background: #e8f0f8; }
+    .btn-unschedule {
+      background: none; border: 1.5px solid #e5e7eb;
+      color: #666; border-radius: 6px;
+      font-size: 0.8rem; font-weight: 600;
+      padding: 0.4rem 0.75rem; cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+    }
+    .btn-unschedule:hover { background: #fef9c3; color: #92580d; border-color: #fcd34d; }
+    .btn-cancel { background: #eee; color: #444; border: none;
+      border-radius: 6px; font-size: 0.86rem; font-weight: 600;
+      padding: 0.5rem 1.05rem; cursor: pointer; }
+    .btn-cancel:hover { background: #ddd; }
+
+    .lock-info {
+      background: #f3f4f6; border-radius: 6px;
+      padding: 0.45rem 0.65rem; font-size: 0.75rem; color: #666;
+      display: flex; align-items: center; gap: 0.4rem;
+      margin-bottom: 0.85rem;
+    }
+
+    /* ── Fly fields ── */
+    .fly-fields { display: none; }
+    .fly-fields.visible { display: block; }
+    .generic-fields { display: block; }
+    .generic-fields.hidden { display: none; }
+
+    .flight-leg {
+      background: #f4f9ff; border: 1.5px solid #cde0f5;
+      border-radius: 8px; padding: 0.7rem 0.8rem; margin-bottom: 0.7rem;
+    }
+    .flight-leg-title {
+      font-size: 0.72rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.05em;
+      color: #2d6a9f; margin-bottom: 0.55rem;
+    }
+    .roundtrip-toggle {
+      display: flex; align-items: center; gap: 0.5rem;
+      margin-bottom: 0.7rem;
+      font-size: 0.85rem; font-weight: 600; color: #333; cursor: pointer;
+    }
+    .roundtrip-toggle input { cursor: pointer; width: 15px; height: 15px; }
+    #return-leg { display: none; }
+    #return-leg.visible { display: block; }
+    .form-divider {
+      border: none; border-top: 1px solid #e5e7eb; margin: 0.25rem 0 0.85rem;
+    }
+
+    /* ── Parse area ── */
+    .parse-area {
+      border: 1.5px dashed #b8d4ea; border-radius: 8px;
+      padding: 0.8rem; background: #f4f9ff; margin-bottom: 0.85rem;
+    }
+    .parse-area label {
+      font-size: 0.78rem; font-weight: 600; color: #444;
+      display: block; margin-bottom: 0.35rem;
+    }
+    .parse-area textarea {
+      width: 100%; border: 1.5px solid #ddd; border-radius: 6px;
+      padding: 0.5rem 0.6rem; font-size: 0.82rem;
+      font-family: inherit; min-height: 100px; resize: vertical;
+    }
+    .parse-btn {
+      margin-top: 0.5rem; background: #2d6a9f; color: #fff; border: none;
+      border-radius: 6px; font-size: 0.82rem; font-weight: 600;
+      padding: 0.45rem 1rem; cursor: pointer;
+      transition: background 0.15s, opacity 0.15s;
+    }
+    .parse-btn:hover { background: #235580; }
+    .parse-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .parse-status {
+      font-size: 0.78rem; color: #888;
+      font-style: italic; margin-top: 0.4rem;
+    }
+
+    /* ── Timeline ── */
+    #timeline-area {
+      display: none; flex: 1; overflow-y: auto; padding: 1.4rem;
+    }
+    #timeline-area.visible { display: block; }
+    .timeline-month { margin-bottom: 1.8rem; }
+    .timeline-month-title {
+      font-size: 0.74rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.06em;
+      color: #888; margin-bottom: 0.6rem;
+      padding-bottom: 0.3rem; border-bottom: 1px solid #e5e7eb;
+    }
+    .timeline-day { display: flex; gap: 1rem; margin-bottom: 0.4rem; }
+    .timeline-date-col {
+      width: 42px; flex-shrink: 0; text-align: right; padding-top: 0.1rem;
+    }
+    .timeline-day-num {
+      font-size: 1.05rem; font-weight: 700; color: #1a1a1a; line-height: 1;
+    }
+    .timeline-day-name {
+      font-size: 0.67rem; color: #aaa; text-transform: uppercase;
+    }
+    .timeline-events {
+      flex: 1; display: flex; flex-direction: column; gap: 0.3rem;
+    }
+    .timeline-card {
+      border-left: 4px solid #ddd; border-radius: 0 7px 7px 0;
+      padding: 0.45rem 0.7rem; background: #fff;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+      cursor: pointer; transition: box-shadow 0.12s;
+    }
+    .timeline-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.11); }
+    .timeline-card.fly        { border-color: var(--fly); }
+    .timeline-card.tog        { border-color: var(--tog); }
+    .timeline-card.hotell     { border-color: var(--hotell); }
+    .timeline-card.aktivitet  { border-color: var(--aktivitet); }
+    .timeline-card.transport  { border-color: var(--transport); }
+    .timeline-card.restaurant { border-color: var(--restaurant); }
+    .timeline-card.annet      { border-color: var(--annet); }
+    .timeline-card-title { font-size: 0.85rem; font-weight: 600; }
+    .timeline-card-meta { font-size: 0.72rem; color: #888; margin-top: 1px; }
+
+    /* ── Center map mode ── */
+    .cal-mode { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+    .cal-mode.hidden { display: none; }
+    .map-mode {
+      display: none; flex-direction: column; flex: 1; min-height: 0;
+    }
+    .map-mode.visible { display: flex; }
+
+    .map-date-bar {
+      display: flex; align-items: center; gap: 0.5rem;
+      padding: 0.4rem 0.5rem; margin-bottom: 0.7rem;
+      background: #fff; border-radius: 8px;
+      border: 1px solid #e0e0e0;
+      flex-shrink: 0;
+    }
+    .map-date-info {
+      flex: 1; display: flex; flex-direction: column;
+      align-items: center; line-height: 1.15;
+    }
+    .map-date-title {
+      font-size: 1rem; font-weight: 700; color: #1a1a1a;
+    }
+    .map-date-sub {
+      font-size: 0.72rem; color: #888; margin-top: 1px;
+    }
+    .map-date-empty .map-date-title { color: #aaa; }
+
+    .center-map-wrap {
+      flex: 1; min-height: 0; position: relative;
+      border-radius: 10px; overflow: hidden;
+      border: 1px solid #e0e0e0; background: #f0f0f0;
+    }
+    #center-map { width: 100%; height: 100%; }
+
+    .map-status {
+      position: absolute; bottom: 8px; left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.62); color: #fff;
+      font-size: 0.72rem; padding: 3px 10px; border-radius: 12px;
+      z-index: 1000; pointer-events: none;
+      white-space: nowrap; display: none;
+    }
+    .map-status.visible { display: block; }
+
+    .map-empty-overlay {
+      position: absolute; inset: 0;
+      display: none; align-items: center; justify-content: center;
+      background: rgba(245,244,240,0.85); z-index: 800;
+      color: #888; font-size: 0.85rem; pointer-events: none;
+    }
+    .map-empty-overlay.visible { display: flex; }
+
+    /* ── iCal modal ── */
+    .modal-overlay {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.4); display: none;
+      align-items: center; justify-content: center;
+      z-index: 100; padding: 1rem;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal {
+      background: #fff; border-radius: 12px;
+      width: 100%; max-width: 460px; max-height: 90vh;
+      display: flex; flex-direction: column;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+    }
+    .modal-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 1.05rem 1.25rem 0.85rem;
+      border-bottom: 1px solid #eee; flex-shrink: 0;
+    }
+    .modal-header h2 { font-size: 1rem; font-weight: 700; }
+    .modal-close {
+      background: none; border: none; font-size: 1.2rem;
+      cursor: pointer; color: #888; line-height: 1;
+      padding: 2px 6px; border-radius: 4px;
+    }
+    .modal-close:hover { background: #eee; }
+    .modal-body { flex: 1; overflow-y: auto; padding: 1.05rem 1.25rem; }
+    .modal-footer {
+      padding: 0.8rem 1.25rem; border-top: 1px solid #eee;
+      display: flex; gap: 0.6rem; justify-content: flex-end; flex-shrink: 0;
+    }
+    .ical-drop {
+      border: 2px dashed #b8d4ea; border-radius: 8px;
+      padding: 1.65rem; text-align: center; cursor: pointer;
+      transition: background 0.15s; color: #666; font-size: 0.85rem;
+    }
+    .ical-drop:hover, .ical-drop.drag-over {
+      background: #e8f4ff; border-color: #4a7fa5;
+    }
+    .ical-drop input { display: none; }
+
+    @media (max-width: 1100px) {
+      .editor-panel { width: 320px; }
+    }
+    @media (max-width: 900px) {
+      .event-list-panel { display: none; }
+    }
+    @media (max-width: 700px) {
+      .editor-panel { display: none; }
+    }
+  </style>
+</head>
+<body>
+<div class="shell">
+
+  <div class="topbar">
+    <h1>✈ Ferieplanlegger</h1>
+    <div class="view-toggle">
+      <button class="view-toggle-btn active" id="view-cal">Kalender</button>
+      <button class="view-toggle-btn" id="view-map">🗺 Kart</button>
+      <button class="view-toggle-btn" id="view-timeline">Tidslinje</button>
+    </div>
+    <button class="topbar-btn secondary" id="apikey-btn" type="button">🔑 API-nøkkel</button>
+    <button class="topbar-btn secondary" id="export-btn" type="button">Eksporter</button>
+    <button class="topbar-btn secondary" id="import-json-btn" type="button">Importer JSON</button>
+    <button class="topbar-btn secondary" id="ical-btn" type="button">Importer .ics</button>
+  </div>
+
+  <div class="main">
+
+    <div id="timeline-area"></div>
+
+    <div id="cal-view" class="cal-view">
+
+      <!-- Left: event list -->
+      <aside class="event-list-panel">
+        <div class="event-list-header">
+          <h3>Hendelser</h3>
+          <button class="new-event-btn" id="new-event-btn" title="Ny hendelse">＋</button>
+        </div>
+        <div class="event-list-body" id="event-list-body"></div>
+      </aside>
+
+      <!-- Center: calendar / map -->
+      <div class="cal-area">
+
+        <!-- Calendar mode -->
+        <div class="cal-mode" id="cal-mode">
+          <div class="legend" id="legend"></div>
+          <div class="cal-nav">
+            <button class="nav-btn" id="prev-month">‹</button>
+            <h2 id="cal-title"></h2>
+            <button class="nav-btn" id="next-month">›</button>
+          </div>
+          <div class="cal-grid" id="cal-grid"></div>
+        </div>
+
+        <!-- Map mode -->
+        <div class="map-mode" id="map-mode">
+          <div class="map-date-bar">
+            <button class="nav-btn" id="prev-date" title="Forrige dato">‹</button>
+            <div class="map-date-info">
+              <div class="map-date-title" id="map-date-title">–</div>
+              <div class="map-date-sub" id="map-date-sub"></div>
+            </div>
+            <button class="nav-btn" id="next-date" title="Neste dato">›</button>
+          </div>
+          <div class="center-map-wrap">
+            <div id="center-map"></div>
+            <div class="map-empty-overlay" id="map-empty-overlay">Ingen hendelser denne dagen</div>
+            <div class="map-status" id="center-map-status"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: editor -->
+      <aside class="editor-panel">
+        <div class="editor-empty" id="editor-empty">
+          <div class="editor-empty-icon">📅</div>
+          <div>Velg en hendelse for å redigere,<br>eller trykk ＋ for å lage en ny.</div>
+        </div>
+
+        <div class="editor-frame" id="editor-frame">
+          <div class="editor-header">
+            <h3 id="editor-title">Ny hendelse</h3>
+            <button class="editor-close-btn" id="editor-close-btn" title="Lukk">×</button>
+          </div>
+
+          <div class="editor-body">
+
+            <div class="lock-info" id="lock-info" style="display:none">
+              🔒 <span>Denne hendelsen har bookingnummer og kan ikke flyttes ut av kalenderen.</span>
+            </div>
+
+            <div class="editor-tabs" id="editor-tabs">
+              <button class="editor-tab-btn active" data-tab="manual">Manuelt</button>
+              <button class="editor-tab-btn" data-tab="parse">Fra tekst</button>
+            </div>
+
+            <!-- Parse tab -->
+            <div class="editor-tab-panel" id="etab-parse">
+              <div class="parse-area">
+                <label>Lim inn bekreftelsesmail eller bookingdetaljer</label>
+                <textarea id="parse-input" placeholder="Lim inn tekst fra e-post, SMS eller nettside…"></textarea>
+                <button class="parse-btn" id="parse-btn" type="button">Analyser med Claude</button>
+                <div class="parse-status" id="parse-status"></div>
+              </div>
+              <p style="font-size:0.78rem;color:#999;margin-bottom:0.5rem">
+                Claude trekker ut detaljer og fyller skjemaet automatisk.
+              </p>
+            </div>
+
+            <!-- Manual tab -->
+            <div class="editor-tab-panel active" id="etab-manual">
+
+              <div class="field">
+                <label>Type</label>
+                <select id="f-type">
+                  <option value="aktivitet">🎯 Aktivitet</option>
+                  <option value="restaurant">🍽 Restaurant</option>
+                  <option value="hotell">🏨 Hotell</option>
+                  <option value="fly">✈ Fly</option>
+                  <option value="tog">🚆 Tog</option>
+                  <option value="transport">🚗 Transport</option>
+                  <option value="annet">📌 Annet</option>
+                </select>
+              </div>
+
+              <!-- Fly / Tog (route) fields -->
+              <div class="fly-fields" id="fly-fields">
+                <div class="flight-leg">
+                  <div class="flight-leg-title" id="leg-out-title">✈ Utreise</div>
+                  <div class="field-row">
+                    <div class="field">
+                      <label>Fra<span class="field-required">*</span></label>
+                      <input type="text" id="f-fly-from" placeholder="Oslo (OSL)" />
+                    </div>
+                    <div class="field">
+                      <label>Til<span class="field-required">*</span></label>
+                      <input type="text" id="f-fly-to" placeholder="Roma (FCO)" />
+                    </div>
+                  </div>
+                  <div class="field-row">
+                    <div class="field">
+                      <label>Avreisedato<span class="field-required">*</span></label>
+                      <input type="date" id="f-fly-dep-date" />
+                    </div>
+                    <div class="field">
+                      <label>Avgangstid</label>
+                      <input type="time" id="f-fly-dep-time" />
+                    </div>
+                  </div>
+                  <div class="field-row">
+                    <div class="field">
+                      <label>Ankomstdato</label>
+                      <input type="date" id="f-fly-arr-date" />
+                    </div>
+                    <div class="field">
+                      <label>Ankomsttid</label>
+                      <input type="time" id="f-fly-arr-time" />
+                    </div>
+                  </div>
+                </div>
+
+                <label class="roundtrip-toggle">
+                  <input type="checkbox" id="f-roundtrip" />
+                  Tur-retur
+                </label>
+
+                <div class="flight-leg" id="return-leg">
+                  <div class="flight-leg-title" id="leg-ret-title">↩ Retur</div>
+                  <div class="field-row">
+                    <div class="field">
+                      <label>Avreisedato</label>
+                      <input type="date" id="f-ret-dep-date" />
+                    </div>
+                    <div class="field">
+                      <label>Avgangstid</label>
+                      <input type="time" id="f-ret-dep-time" />
+                    </div>
+                  </div>
+                  <div class="field-row">
+                    <div class="field">
+                      <label>Ankomstdato</label>
+                      <input type="date" id="f-ret-arr-date" />
+                    </div>
+                    <div class="field">
+                      <label>Ankomsttid</label>
+                      <input type="time" id="f-ret-arr-time" />
+                    </div>
+                  </div>
+                </div>
+
+                <hr class="form-divider" />
+                <div class="field-row">
+                  <div class="field">
+                    <label id="carrier-label">Flyselskap / flightnr.</label>
+                    <input type="text" id="f-fly-carrier" placeholder="Ryanair FR1234" />
+                  </div>
+                  <div class="field">
+                    <label>Bekreftelsesnr.</label>
+                    <input type="text" id="f-ref" placeholder="ABC123" />
+                  </div>
+                </div>
+                <div class="field">
+                  <label>Lenke <span class="field-opt">(valgfri)</span></label>
+                  <input type="url" id="f-url-fly" placeholder="https://…" />
+                </div>
+                <div class="field">
+                  <label>Notater <span class="field-opt">(valgfri)</span></label>
+                  <textarea id="f-notes-fly" placeholder="Fri tekst…"></textarea>
+                </div>
+              </div>
+
+              <!-- Generic fields -->
+              <div class="generic-fields" id="generic-fields">
+                <div class="field">
+                  <label>Tittel<span class="field-required">*</span></label>
+                  <input type="text" id="f-title" placeholder="F.eks. Hotel Colosseo" />
+                </div>
+
+                <div class="field">
+                  <label>Adresse<span class="field-required">*</span></label>
+                  <div class="address-row">
+                    <input type="text" id="f-address" placeholder="F.eks. Via Labicana 124, Roma" autocomplete="off" />
+                    <button type="button" class="address-search-btn" id="address-search-btn" title="Søk på kart">🔍</button>
+                  </div>
+                  <div class="address-status" id="address-status"></div>
+                  <div class="mini-map-container" id="mini-map-container">
+                    <div id="event-mini-map"></div>
+                  </div>
+                </div>
+
+                <div class="field-row">
+                  <div class="field">
+                    <label>Dato i kalender <span class="field-opt">(valgfri)</span></label>
+                    <input type="date" id="f-start" />
+                  </div>
+                  <div class="field">
+                    <label>Sluttdato <span class="field-opt">(valgfri)</span></label>
+                    <input type="date" id="f-end" />
+                  </div>
+                </div>
+                <button type="button" id="date-suggestion" class="date-suggestion-btn" style="display:none"></button>
+                <p class="date-empty-hint" id="date-empty-hint" style="display:none">Tom dato — hendelsen havner i «Ikke planlagt».</p>
+                <div class="field-row">
+                  <div class="field">
+                    <label>Tidspunkt <span class="field-opt">(valgfri)</span></label>
+                    <input type="time" id="f-time" />
+                  </div>
+                  <div class="field">
+                    <label>Bekreftelsesnr. <span class="field-opt">(valgfri)</span></label>
+                    <input type="text" id="f-ref-generic" placeholder="ABC123" />
+                  </div>
+                </div>
+                <div class="field">
+                  <label>Lenke <span class="field-opt">(valgfri)</span></label>
+                  <input type="url" id="f-url" placeholder="https://…" />
+                </div>
+                <div class="field">
+                  <label>Notater <span class="field-opt">(valgfri)</span></label>
+                  <textarea id="f-notes" placeholder="Fri tekst…"></textarea>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="editor-footer">
+            <button class="btn btn-danger" id="delete-btn" style="display:none;margin-right:auto">Slett</button>
+            <button class="btn-unschedule" id="unschedule-btn" style="display:none">↙ Ut av kalender</button>
+            <button class="btn btn-cancel" id="cancel-btn">Avbryt</button>
+            <button class="btn btn-primary" id="save-btn">Lagre</button>
+          </div>
+        </div>
+      </aside>
+
+    </div>
+  </div>
+</div>
+
+<!-- iCal modal -->
+<div class="modal-overlay" id="ical-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>Importer .ics-fil</h2>
+      <button class="modal-close" id="ical-modal-close">×</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:0.85rem;color:#555;margin-bottom:1rem">
+        Last opp en .ics-fil fra Airbnb, SAS / Norwegian, Google Calendar el.l.
+      </p>
+      <label class="ical-drop" id="ical-drop">
+        <input type="file" id="ical-file" accept=".ics" />
+        <div>📅 Klikk eller dra .ics-fil hit</div>
+        <div id="ical-filename" style="margin-top:0.5rem;font-size:0.78rem;color:#4a7fa5"></div>
+      </label>
+      <div id="ical-status" style="margin-top:0.65rem;font-size:0.82rem;color:#555"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-cancel" id="ical-cancel">Avbryt</button>
+      <button class="btn btn-primary" id="ical-import-btn" disabled>Importer</button>
+    </div>
+  </div>
+</div>
+
+<!-- API key modal -->
+<div class="modal-overlay" id="apikey-modal">
+  <div class="modal" style="max-width:400px">
+    <div class="modal-header">
+      <h2>Claude API-nøkkel</h2>
+      <button class="modal-close" id="apikey-modal-close">×</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:0.85rem;color:#555;margin-bottom:1rem">
+        Nøkkelen lagres kun i nettleseren din (localStorage) og sendes aldri andre steder enn direkte til Anthropic.
+      </p>
+      <div class="field">
+        <label>API-nøkkel <span class="field-required">*</span></label>
+        <input type="password" id="apikey-input" placeholder="sk-ant-api03-…" autocomplete="off" />
+      </div>
+      <p style="font-size:0.75rem;color:#aaa">Hent nøkkelen på <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a></p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-cancel" id="apikey-cancel">Avbryt</button>
+      <button class="btn btn-primary" id="apikey-save">Lagre</button>
+    </div>
+  </div>
+</div>
+
+<!-- JSON import modal -->
+<div class="modal-overlay" id="import-json-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>Importer JSON-data</h2>
+      <button class="modal-close" id="import-json-modal-close">×</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:0.85rem;color:#555;margin-bottom:1rem">
+        Last opp en tidligere eksportert <code>.json</code>-fil fra Ferieplanleggeren.
+      </p>
+      <label class="ical-drop" id="import-json-drop">
+        <input type="file" id="import-json-file" accept=".json" />
+        <div>📂 Klikk eller dra .json-fil hit</div>
+        <div id="import-json-filename" style="margin-top:0.5rem;font-size:0.78rem;color:#4a7fa5"></div>
+      </label>
+      <div id="import-json-status" style="margin-top:0.65rem;font-size:0.82rem;color:#555"></div>
+      <div id="import-json-options" style="display:none;margin-top:1rem">
+        <p style="font-size:0.8rem;font-weight:600;color:#444;margin-bottom:0.5rem">Importmåte:</p>
+        <label style="display:flex;align-items:center;gap:0.5rem;font-size:0.84rem;margin-bottom:0.4rem;cursor:pointer">
+          <input type="radio" name="import-mode" value="merge" checked /> Slå sammen (beholder eksisterende, legger til nye)
+        </label>
+        <label style="display:flex;align-items:center;gap:0.5rem;font-size:0.84rem;cursor:pointer">
+          <input type="radio" name="import-mode" value="replace" /> Erstatt alt (sletter alle eksisterende hendelser)
+        </label>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-cancel" id="import-json-cancel">Avbryt</button>
+      <button class="btn btn-primary" id="import-json-confirm-btn" disabled>Importer</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const MODEL = "claude-sonnet-4-6";
+
+function getApiKey() { return localStorage.getItem("ferie-api-key") || ""; }
+function setApiKey(k) { localStorage.setItem("ferie-api-key", k.trim()); }
+
+// ── Helpers ────────────────────────────────────────────────────
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+function g(id) { return document.getElementById(id); }
+function escHtml(s) {
+  return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+
+const MONTHS_NO = ["Januar","Februar","Mars","April","Mai","Juni",
+                   "Juli","August","September","Oktober","November","Desember"];
+const DAYS_NO   = ["Man","Tir","Ons","Tor","Fre","Lør","Søn"];
+const DAY_NAMES = ["Søn","Man","Tir","Ons","Tor","Fre","Lør"];
+const TYPE_LABELS = { fly:"Fly", tog:"Tog", hotell:"Hotell", aktivitet:"Aktivitet",
+                      transport:"Transport", restaurant:"Restaurant", annet:"Annet" };
+const TYPE_COLORS = { fly:"#3b82f6", tog:"#0d9488", hotell:"#10b981", aktivitet:"#f59e0b",
+                      transport:"#8b5cf6", restaurant:"#ef4444", annet:"#6b7280" };
+const SPAN_TYPES  = new Set(["hotell","transport","annet"]);
+const ROUTE_TYPES = new Set(["fly","tog"]);
+
+function toDateStr(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+}
+function formatDateNo(str) {
+  if (!str) return "";
+  const [y, m, d] = str.split("-");
+  return `${parseInt(d)}. ${MONTHS_NO[parseInt(m)-1].slice(0,3)} ${y}`;
+}
+function getMondayOf(date) {
+  const d = new Date(date);
+  const day = d.getDay();
+  d.setDate(d.getDate() + (day === 0 ? -6 : 1 - day));
+  d.setHours(0,0,0,0);
+  return d;
+}
+function addDays(date, n) { const d = new Date(date); d.setDate(d.getDate() + n); return d; }
+
+// ── Data (unified events) ──────────────────────────────────────
+function migrate() {
+  // Migrate from old format (bookings + suggestions) once.
+  if (localStorage.getItem("ferie-events")) return;
+  let merged = [];
+  try {
+    const old = JSON.parse(localStorage.getItem("ferie-bookings") || "[]");
+    old.forEach(b => merged.push({
+      ...b,
+      address: b.location || b.flyFrom || "",
+    }));
+  } catch {}
+  try {
+    const sugs = JSON.parse(localStorage.getItem("ferie-suggestions") || "[]");
+    sugs.forEach(s => merged.push({
+      id: s.id || uid(),
+      type: s.type || "aktivitet",
+      title: s.title,
+      address: s.location || "",
+      startDate: s.date || "",
+      endDate: "",
+      time: "",
+      ref: "",
+      url: "",
+      notes: s.notes || "",
+    }));
+  } catch {}
+  if (merged.length) localStorage.setItem("ferie-events", JSON.stringify(merged));
+}
+migrate();
+
+function loadEvents() {
+  try { return JSON.parse(localStorage.getItem("ferie-events") || "[]"); }
+  catch { return []; }
+}
+function saveEvents() {
+  localStorage.setItem("ferie-events", JSON.stringify(events));
+}
+
+let events = loadEvents();
+
+// ── Calendar state ─────────────────────────────────────────────
+const today = new Date();
+let viewStart    = getMondayOf(today);
+let selectedDate = toDateStr(today);
+let editingId    = null;
+let isNewEvent   = false;
+const WEEKS_SHOWN = 5;
+
+// ── Geocoding ─────────────────────────────────────────────────
+const geocodeCache = JSON.parse(localStorage.getItem("ferie-geocache") || "{}");
+
+async function geocode(query) {
+  if (!query) return null;
+  const key = query.toLowerCase().trim();
+  if (Object.prototype.hasOwnProperty.call(geocodeCache, key)) return geocodeCache[key];
+  try {
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1`,
+      { headers: { "User-Agent": "Ferieplanlegger/1.0" } }
+    );
+    const data = await res.json();
+    const result = data.length ? [parseFloat(data[0].lat), parseFloat(data[0].lon)] : null;
+    geocodeCache[key] = result;
+    localStorage.setItem("ferie-geocache", JSON.stringify(geocodeCache));
+    return result;
+  } catch {
+    return null;
+  }
+}
+
+// ── Hotel-distance sorting for unscheduled events ─────────────
+function haversineKm(a, b) {
+  const R = 6371, toRad = x => x * Math.PI / 180;
+  const dLat = toRad(b[0] - a[0]), dLon = toRad(b[1] - a[1]);
+  const s = Math.sin(dLat/2)**2 + Math.cos(toRad(a[0])) * Math.cos(toRad(b[0])) * Math.sin(dLon/2)**2;
+  return R * 2 * Math.asin(Math.sqrt(s));
+}
+
+// { eventId: [{ km, hotelTitle }, ...] } sorted by distance
+let unscheduledDistMap = {};
+let distRefreshSeq = 0;
+
+async function refreshUnscheduledDistances() {
+  const seq = ++distRefreshSeq;
+  const hotels = selectedDate
+    ? events.filter(e => e.type === 'hotell' && e.startDate && e.address && eventOverlapsDate(e, selectedDate))
+    : [];
+  if (!hotels.length) {
+    if (seq !== distRefreshSeq) return;
+    unscheduledDistMap = {};
+    renderEventList();
+    return;
+  }
+  const hotelCoords = (await Promise.all(
+    hotels.map(async h => ({ h, coords: await geocode(h.address) }))
+  )).filter(x => x.coords);
+  if (seq !== distRefreshSeq) return;
+  if (!hotelCoords.length) {
+    unscheduledDistMap = {};
+    renderEventList();
+    return;
+  }
+  const unscheduled = events.filter(e => !e.startDate && e.address && !ROUTE_TYPES.has(e.type));
+  const map = {};
+  for (const ev of unscheduled) {
+    const c = await geocode(ev.address);
+    if (seq !== distRefreshSeq) return;
+    if (!c) continue;
+    map[ev.id] = hotelCoords
+      .map(({ h, coords }) => ({ km: haversineKm(c, coords), hotelTitle: h.title }))
+      .sort((a, b) => a.km - b.km);
+  }
+  if (seq !== distRefreshSeq) return;
+  unscheduledDistMap = map;
+  renderEventList();
+}
+
+// ── Marker icon ───────────────────────────────────────────────
+function makeMarkerIcon(color, size = 20) {
+  const h = Math.round(size * 1.4);
+  return L.divIcon({
+    html: `<svg width="${size}" height="${h}" viewBox="0 0 20 28" xmlns="http://www.w3.org/2000/svg">
+      <path d="M10 0C4.5 0 0 4.5 0 10c0 7.5 10 18 10 18S20 17.5 20 10C20 4.5 15.5 0 10 0z"
+        fill="${color}" stroke="white" stroke-width="1.5"/>
+      <circle cx="10" cy="10" r="4" fill="white" opacity="0.85"/>
+    </svg>`,
+    className: "",
+    iconSize: [size, h],
+    iconAnchor: [size / 2, h],
+    popupAnchor: [0, -h]
+  });
+}
+
+// ── Mini map (in editor) ───────────────────────────────────────
+let miniMap = null;
+let miniMapMarker = null;
+
+function ensureMiniMap() {
+  if (miniMap) return;
+  miniMap = L.map("event-mini-map", {
+    zoomControl: false, attributionControl: false,
+    dragging: true, scrollWheelZoom: false, doubleClickZoom: true,
+  }).setView([48, 15], 3);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(miniMap);
+}
+
+function showMiniMap(coords) {
+  const c = g("mini-map-container");
+  c.classList.add("visible");
+  ensureMiniMap();
+  setTimeout(() => {
+    miniMap.invalidateSize();
+    miniMap.setView(coords, 14);
+    if (miniMapMarker) miniMap.removeLayer(miniMapMarker);
+    miniMapMarker = L.marker(coords, { icon: makeMarkerIcon("#2d6a9f", 20) }).addTo(miniMap);
+  }, 30);
+}
+
+function hideMiniMap() {
+  g("mini-map-container").classList.remove("visible");
+  if (miniMap && miniMapMarker) { miniMap.removeLayer(miniMapMarker); miniMapMarker = null; }
+}
+
+let addressLastQuery = "";
+let addressValidCoords = null;
+
+function setAddressStatus(cls, text) {
+  const el = g("address-status");
+  el.className = "address-status " + (cls || "");
+  el.textContent = text || "";
+}
+
+async function lookupAddress(force = false) {
+  const val = g("f-address").value.trim();
+  g("f-address").classList.remove("invalid");
+  if (!val) {
+    setAddressStatus("", "");
+    hideMiniMap();
+    addressValidCoords = null;
+    addressLastQuery = "";
+    return;
+  }
+  if (!force && val.toLowerCase() === addressLastQuery && addressValidCoords) return;
+  addressLastQuery = val.toLowerCase();
+  setAddressStatus("busy", "Søker…");
+  g("address-search-btn").disabled = true;
+  const coords = await geocode(val);
+  g("address-search-btn").disabled = false;
+  if (coords) {
+    setAddressStatus("ok", "✓ Plassering funnet");
+    showMiniMap(coords);
+    addressValidCoords = coords;
+  } else {
+    setAddressStatus("err", "⚠ Stedet ble ikke funnet i karttjenesten");
+    hideMiniMap();
+    addressValidCoords = null;
+  }
+}
+
+let addressDebounce = null;
+function onAddressInput() {
+  clearTimeout(addressDebounce);
+  const val = g("f-address").value.trim();
+  if (!val) { lookupAddress(); return; }
+  addressDebounce = setTimeout(() => lookupAddress(), 700);
+}
+
+// ── Events for date ────────────────────────────────────────────
+function eventOverlapsDate(ev, dateStr) {
+  if (!ev.startDate || !dateStr) return false;
+  const end = ev.endDate || ev.startDate;
+  if (SPAN_TYPES.has(ev.type)) return dateStr >= ev.startDate && dateStr <= end;
+  if (ROUTE_TYPES.has(ev.type)) {
+    if (end > ev.startDate) return dateStr >= ev.startDate && dateStr <= end;
+    return dateStr === ev.startDate;
+  }
+  return dateStr === ev.startDate || (ev.endDate && dateStr === ev.endDate);
+}
+
+function getEventsForDate(dateStr) {
+  return events
+    .filter(b => eventOverlapsDate(b, dateStr))
+    .sort((a, b) => (a.time || "") < (b.time || "") ? -1 : 1);
+}
+
+// ── Calendar ───────────────────────────────────────────────────
+function renderCalendar() {
+  const lastDay    = addDays(viewStart, WEEKS_SHOWN * 7 - 1);
+  const startMonth = MONTHS_NO[viewStart.getMonth()];
+  const endMonth   = MONTHS_NO[lastDay.getMonth()];
+  const startYear  = viewStart.getFullYear();
+  const endYear    = lastDay.getFullYear();
+  let title = startMonth;
+  if (startYear !== endYear) title += ` ${startYear}`;
+  if (endMonth !== startMonth) title += ` – ${endMonth}`;
+  title += ` ${endYear}`;
+  g("cal-title").textContent = title;
+
+  const grid = g("cal-grid");
+  grid.innerHTML = "";
+
+  DAYS_NO.forEach(d => {
+    const h = document.createElement("div");
+    h.className = "cal-day-header";
+    h.textContent = d;
+    grid.appendChild(h);
+  });
+
+  for (let i = 0; i < WEEKS_SHOWN * 7; i++) {
+    const date    = addDays(viewStart, i);
+    const dateStr = toDateStr(date);
+    const cell = document.createElement("div");
+    cell.className = "cal-cell";
+    cell.dataset.date = dateStr;
+    if (dateStr === toDateStr(today)) cell.classList.add("today");
+    if (selectedDate === dateStr)     cell.classList.add("selected");
+
+    const dayNum = document.createElement("div");
+    dayNum.className = "cell-date";
+    if (date.getDate() === 1) {
+      dayNum.textContent = `${MONTHS_NO[date.getMonth()].slice(0,3)} 1`;
+      dayNum.style.fontSize = "0.65rem";
+    } else {
+      dayNum.textContent = date.getDate();
+    }
+    cell.appendChild(dayNum);
+
+    const cellEvents = getEventsForDate(dateStr);
+    const pills = document.createElement("div");
+    pills.className = "event-pills";
+    const MAX = 3;
+    cellEvents.slice(0, MAX).forEach(ev => {
+      const pill = document.createElement("div");
+      pill.className = `event-pill ${ev.type}`;
+      if (ev.id === editingId) pill.classList.add("active");
+      pill.textContent = ev.title;
+      pill.draggable = true;
+      pill.dataset.eventId = ev.id;
+      pill.addEventListener("click", e => {
+        e.stopPropagation();
+        openEditor(ev.id);
+      });
+      pill.addEventListener("dragstart", e => onDragStart(e, ev.id));
+      pill.addEventListener("dragend", onDragEnd);
+      pills.appendChild(pill);
+    });
+    if (cellEvents.length > MAX) {
+      const more = document.createElement("div");
+      more.className = "more-events";
+      more.textContent = `+${cellEvents.length - MAX} til`;
+      pills.appendChild(more);
+    }
+    cell.appendChild(pills);
+
+    cell.addEventListener("click", () => {
+      selectedDate = dateStr;
+      renderCalendar();
+      renderEventList(true);
+      refreshUnscheduledDistances();
+      if (currentView === "map") showCenterMap();
+    });
+
+    cell.addEventListener("dragover", e => {
+      if (!draggedEventId) return;
+      e.preventDefault();
+      cell.classList.add("drop-target");
+    });
+    cell.addEventListener("dragleave", () => cell.classList.remove("drop-target"));
+    cell.addEventListener("drop", e => {
+      e.preventDefault();
+      cell.classList.remove("drop-target");
+      if (!draggedEventId) return;
+      scheduleEvent(draggedEventId, dateStr);
+    });
+
+    grid.appendChild(cell);
+  }
+}
+
+// ── Drag and drop ──────────────────────────────────────────────
+let draggedEventId = null;
+
+function onDragStart(e, id) {
+  draggedEventId = id;
+  e.dataTransfer.effectAllowed = "move";
+  try { e.dataTransfer.setData("text/plain", id); } catch {}
+}
+function onDragEnd() {
+  draggedEventId = null;
+  document.querySelectorAll(".drop-target").forEach(c => c.classList.remove("drop-target"));
+}
+
+function scheduleEvent(id, dateStr) {
+  const ev = events.find(x => x.id === id);
+  if (!ev) return;
+  ev.startDate = dateStr;
+  if (ev.endDate && ev.endDate < dateStr) ev.endDate = "";
+  saveEvents();
+  if (editingId === id) {
+    g("f-start").value = dateStr;
+    updateUnscheduleBtn(ev);
+  }
+  renderCalendar();
+  renderEventList();
+  refreshUnscheduledDistances();
+}
+
+function unscheduleEvent(id) {
+  const ev = events.find(x => x.id === id);
+  if (!ev) return;
+  if (ev.ref) { alert("Hendelser med bookingnummer kan ikke flyttes ut av kalenderen."); return; }
+  ev.startDate = "";
+  ev.endDate = "";
+  ev.time = "";
+  saveEvents();
+  if (editingId === id) {
+    g("f-start").value = "";
+    g("f-end").value = "";
+    g("f-time").value = "";
+    updateUnscheduleBtn(ev);
+  }
+  renderCalendar();
+  renderEventList();
+  refreshUnscheduledDistances();
+}
+
+// ── Event list (left panel) ────────────────────────────────────
+function renderEventList(scrollToSelected = false) {
+  const body = g("event-list-body");
+  body.innerHTML = "";
+
+  if (events.length === 0) {
+    const p = document.createElement("p");
+    p.className = "event-list-empty";
+    p.textContent = "Ingen hendelser ennå. Trykk ＋ for å starte.";
+    body.appendChild(p);
+    return;
+  }
+
+  const scheduled   = events.filter(e => e.startDate)
+    .sort((a, b) => a.startDate < b.startDate ? -1 : a.startDate > b.startDate ? 1 : (a.time||"") < (b.time||"") ? -1 : 1);
+  const unscheduled = events.filter(e => !e.startDate);
+
+  if (scheduled.length) {
+    const t = document.createElement("div");
+    t.className = "list-section-title";
+    t.textContent = `I kalenderen (${scheduled.length})`;
+    body.appendChild(t);
+    scheduled.forEach(ev => body.appendChild(makeListItem(ev)));
+  }
+
+  if (unscheduled.length) {
+    const t = document.createElement("div");
+    t.className = "list-section-title unscheduled";
+    t.textContent = `Ikke planlagt (${unscheduled.length})`;
+    body.appendChild(t);
+    const sortedUnsched = [...unscheduled].sort((a, b) => {
+      const da = unscheduledDistMap[a.id];
+      const db = unscheduledDistMap[b.id];
+      if (da && db) return da[0].km - db[0].km;
+      if (da) return -1;
+      if (db) return 1;
+      return 0;
+    });
+    sortedUnsched.forEach(ev => body.appendChild(makeListItem(ev, unscheduledDistMap[ev.id])));
+  }
+
+  if (scrollToSelected) {
+    const target = body.querySelector(".event-list-item.on-selected-date")
+                || body.querySelector(".event-list-item.active");
+    if (target) target.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }
+}
+
+function makeListItem(ev, distInfo) {
+  const item = document.createElement("div");
+  item.className = `event-list-item ${ev.type}`;
+  if (!ev.startDate) item.classList.add("unscheduled");
+  if (ev.id === editingId) item.classList.add("active");
+  if (eventOverlapsDate(ev, selectedDate) && ev.id !== editingId)
+    item.classList.add("on-selected-date");
+  item.dataset.id = ev.id;
+  item.draggable  = true;
+
+  const meta = ROUTE_TYPES.has(ev.type)
+    ? `${ev.flyFrom || ""} → ${ev.flyTo || ""}`
+    : (ev.address || "");
+
+  let distHtml = "";
+  if (distInfo && distInfo.length) {
+    const multiHotel = events.filter(e => e.type === 'hotell' && e.startDate).length > 1;
+    const fmtKm = d => d.km < 1 ? `${Math.round(d.km * 1000)} m` : `${d.km.toFixed(1)} km`;
+    const label = multiHotel
+      ? distInfo.map(d => `${fmtKm(d)} fra ${escHtml(d.hotelTitle)}`).join(' / ')
+      : `${fmtKm(distInfo[0])} fra hotellet`;
+    distHtml = `<div class="event-list-meta" style="color:#2d6a9f">🏨 ${label}</div>`;
+  }
+
+  item.innerHTML = `
+    ${ev.ref ? `<span class="event-list-lock" title="Bookingnummer ${escHtml(ev.ref)}">🔒</span>` : ""}
+    ${ev.startDate ? `<div class="event-list-date-badge">${formatDateNo(ev.startDate)}${ev.time ? " · " + ev.time : ""}</div>` : ""}
+    <div class="event-list-title">${escHtml(ev.title || "(uten tittel)")}</div>
+    ${meta ? `<div class="event-list-meta">📍 ${escHtml(meta)}</div>` : ""}
+    ${distHtml}
+  `;
+  item.addEventListener("click", () => {
+    if (ev.startDate && ev.startDate !== selectedDate) {
+      selectedDate = ev.startDate;
+      viewStart    = getMondayOf(new Date(ev.startDate + "T00:00:00"));
+      refreshUnscheduledDistances();
+    }
+    openEditor(ev.id);
+  });
+  item.addEventListener("dragstart", e => onDragStart(e, ev.id));
+  item.addEventListener("dragend", onDragEnd);
+  return item;
+}
+
+// ── Editor ─────────────────────────────────────────────────────
+function showEmpty() {
+  editingId  = null;
+  isNewEvent = false;
+  g("editor-empty").classList.remove("hidden");
+  g("editor-frame").classList.remove("visible");
+  renderEventList();
+  renderCalendar();
+  if (currentView === "map") showCenterMap();
+}
+
+function openEditor(id) {
+  const ev = id ? events.find(x => x.id === id) : null;
+  editingId  = id || null;
+  isNewEvent = !ev;
+
+  g("editor-empty").classList.add("hidden");
+  g("editor-frame").classList.add("visible");
+
+  if (ev) {
+    g("editor-title").textContent = ev.title || (ROUTE_TYPES.has(ev.type) ? `${ev.flyFrom||""} → ${ev.flyTo||""}` : "(uten tittel)");
+    fillForm(ev);
+    g("delete-btn").style.display = "";
+    updateUnscheduleBtn(ev);
+    g("lock-info").style.display = ev.ref && ev.startDate ? "" : "none";
+    switchEditorTab("manual");
+  } else {
+    g("editor-title").textContent = "Ny hendelse";
+    clearForm();
+    g("delete-btn").style.display = "none";
+    g("unschedule-btn").style.display = "none";
+    g("lock-info").style.display = "none";
+    switchEditorTab("manual");
+    setTimeout(() => g("f-title").focus(), 30);
+  }
+  updateDateSuggestion();
+  renderEventList();
+  renderCalendar();
+  if (currentView === "map") showCenterMap();
+}
+
+function updateUnscheduleBtn(ev) {
+  const btn = g("unschedule-btn");
+  const show = ev && ev.startDate && !ev.ref;
+  btn.style.display = show ? "" : "none";
+}
+
+function updateDateSuggestion() {
+  const sugBtn  = g("date-suggestion");
+  const hint    = g("date-empty-hint");
+  const isRoute = ROUTE_TYPES.has(g("f-type").value);
+  const empty   = !g("f-start").value;
+
+  if (isRoute) {
+    sugBtn.style.display = "none";
+    hint.style.display   = "none";
+    return;
+  }
+
+  if (empty && selectedDate && !editingId) {
+    sugBtn.textContent     = `📅 Bruk valgt dato (${formatDateNo(selectedDate)})`;
+    sugBtn.style.display   = "";
+  } else {
+    sugBtn.style.display   = "none";
+  }
+
+  hint.style.display = empty ? "" : "none";
+}
+
+function closeEditor() { showEmpty(); }
+
+// ── Form helpers ───────────────────────────────────────────────
+function updateFormVisibility() {
+  const type    = g("f-type").value;
+  const isRoute = ROUTE_TYPES.has(type);
+  const isTog   = type === "tog";
+  g("fly-fields").classList.toggle("visible", isRoute);
+  g("generic-fields").classList.toggle("hidden", isRoute);
+  if (isRoute) {
+    g("leg-out-title").textContent = (isTog ? "🚆" : "✈") + " Utreise";
+    g("leg-ret-title").textContent = (isTog ? "🚆" : "↩") + " Retur";
+    g("carrier-label").textContent = isTog ? "Operatør / tognr." : "Flyselskap / flightnr.";
+    const carrier = g("f-fly-carrier");
+    carrier.placeholder = isTog ? "Vy 605" : "Ryanair FR1234";
+    g("f-fly-from").placeholder = isTog ? "Oslo S" : "Oslo (OSL)";
+    g("f-fly-to").placeholder   = isTog ? "Bergen" : "Roma (FCO)";
+  }
+}
+g("f-type").addEventListener("change", () => { updateFormVisibility(); updateDateSuggestion(); });
+g("f-start").addEventListener("input", updateDateSuggestion);
+g("date-suggestion").addEventListener("click", () => {
+  if (!selectedDate) return;
+  g("f-start").value = selectedDate;
+  updateDateSuggestion();
+});
+g("f-roundtrip").addEventListener("change", () => {
+  g("return-leg").classList.toggle("visible", g("f-roundtrip").checked);
+});
+
+function clearForm() {
+  ["f-title","f-address","f-start","f-end","f-time","f-ref-generic","f-url","f-notes",
+   "f-fly-from","f-fly-to","f-fly-dep-date","f-fly-dep-time","f-fly-arr-date","f-fly-arr-time",
+   "f-fly-carrier","f-ref","f-url-fly","f-notes-fly",
+   "f-ret-dep-date","f-ret-dep-time","f-ret-arr-date","f-ret-arr-time"]
+    .forEach(id => { const el = g(id); if (el) el.value = ""; });
+  g("f-type").value = "aktivitet";
+  g("f-roundtrip").checked = false;
+  g("return-leg").classList.remove("visible");
+  updateFormVisibility();
+  hideMiniMap();
+  setAddressStatus("", "");
+  addressValidCoords = null;
+  addressLastQuery   = "";
+  g("f-address").classList.remove("invalid");
+  updateDateSuggestion();
+}
+
+function fillForm(ev) {
+  clearForm();
+  g("f-type").value = ev.type || "annet";
+  updateFormVisibility();
+
+  if (ROUTE_TYPES.has(ev.type)) {
+    g("f-fly-from").value     = ev.flyFrom      || "";
+    g("f-fly-to").value       = ev.flyTo        || "";
+    g("f-fly-dep-date").value = ev.startDate    || "";
+    g("f-fly-dep-time").value = ev.time         || "";
+    g("f-fly-arr-date").value = ev.endDate      || "";
+    g("f-fly-arr-time").value = ev.arrivalTime  || "";
+    g("f-fly-carrier").value  = ev.carrier      || "";
+    g("f-ref").value          = ev.ref          || "";
+    g("f-url-fly").value      = ev.url          || "";
+    g("f-notes-fly").value    = ev.notes        || "";
+  } else {
+    g("f-title").value        = ev.title        || "";
+    g("f-address").value      = ev.address      || "";
+    g("f-start").value        = ev.startDate    || "";
+    g("f-end").value          = ev.endDate      || "";
+    g("f-time").value         = ev.time         || "";
+    g("f-ref-generic").value  = ev.ref          || "";
+    g("f-url").value          = ev.url          || "";
+    g("f-notes").value        = ev.notes        || "";
+    if (ev.address) lookupAddress();
+  }
+  updateDateSuggestion();
+}
+
+function buildEventFromForm(id) {
+  const type = g("f-type").value;
+  if (ROUTE_TYPES.has(type)) {
+    const from    = g("f-fly-from").value.trim();
+    const to      = g("f-fly-to").value.trim();
+    const depDate = g("f-fly-dep-date").value;
+    const depTime = g("f-fly-dep-time").value;
+    const arrDate = g("f-fly-arr-date").value || depDate;
+    const arrTime = g("f-fly-arr-time").value;
+    if (!from || !to) { alert("Fyll inn avgangs- og ankomststed."); return null; }
+    if (!depDate)     { alert("Velg avreisedato."); return null; }
+    return {
+      id: id || uid(),
+      type,
+      title: `${from} → ${to}`,
+      address: from,
+      startDate: depDate,
+      endDate: arrDate !== depDate ? arrDate : "",
+      time: depTime || "",
+      arrivalTime: arrTime || "",
+      flyFrom: from,
+      flyTo: to,
+      carrier: g("f-fly-carrier").value.trim(),
+      ref: g("f-ref").value.trim(),
+      url: g("f-url-fly").value.trim(),
+      notes: g("f-notes-fly").value.trim(),
+    };
+  }
+  const title   = g("f-title").value.trim();
+  const address = g("f-address").value.trim();
+  if (!title)   { alert("Fyll inn en tittel."); g("f-title").focus(); return null; }
+  if (!address) {
+    alert("Adresse er obligatorisk.");
+    g("f-address").classList.add("invalid");
+    g("f-address").focus();
+    return null;
+  }
+  if (!addressValidCoords || addressLastQuery !== address.toLowerCase()) {
+    alert("Adressen må være gyldig i karttjenesten. Trykk 🔍 for å bekrefte.");
+    g("f-address").classList.add("invalid");
+    g("f-address").focus();
+    return null;
+  }
+  return {
+    id: id || uid(),
+    type,
+    title,
+    address,
+    startDate: g("f-start").value || "",
+    endDate:   g("f-end").value   || "",
+    time:      g("f-time").value  || "",
+    ref:       g("f-ref-generic").value.trim() || "",
+    url:       g("f-url").value.trim()         || "",
+    notes:     g("f-notes").value.trim()       || "",
+  };
+}
+
+function saveEvent() {
+  const ev = buildEventFromForm(editingId);
+  if (!ev) return;
+  const type = g("f-type").value;
+
+  if (editingId) {
+    events = events.map(x => x.id === editingId ? ev : x);
+  } else {
+    events.push(ev);
+  }
+
+  // Round trip (fly or tog) => add a return as a separate event
+  if (ROUTE_TYPES.has(type) && g("f-roundtrip").checked && !editingId) {
+    const retDepDate = g("f-ret-dep-date").value;
+    const retDepTime = g("f-ret-dep-time").value;
+    const retArrDate = g("f-ret-arr-date").value || retDepDate;
+    const retArrTime = g("f-ret-arr-time").value;
+    if (retDepDate) {
+      events.push({
+        id: uid(),
+        type,
+        title: `${ev.flyTo} → ${ev.flyFrom}`,
+        address: ev.flyTo,
+        startDate: retDepDate,
+        endDate: retArrDate !== retDepDate ? retArrDate : "",
+        time: retDepTime || "",
+        arrivalTime: retArrTime || "",
+        flyFrom: ev.flyTo,
+        flyTo: ev.flyFrom,
+        carrier: ev.carrier,
+        ref: ev.ref,
+        url: ev.url,
+        notes: ev.notes,
+      });
+    }
+  }
+
+  saveEvents();
+  editingId  = ev.id;
+  isNewEvent = false;
+  g("editor-title").textContent = ev.title || "(uten tittel)";
+  g("delete-btn").style.display = "";
+  updateUnscheduleBtn(ev);
+  g("lock-info").style.display = ev.ref && ev.startDate ? "" : "none";
+  renderCalendar();
+  renderEventList();
+  refreshUnscheduledDistances();
+}
+
+function deleteEvent() {
+  if (!editingId) return;
+  if (!confirm("Slette denne hendelsen?")) return;
+  events = events.filter(x => x.id !== editingId);
+  saveEvents();
+  showEmpty();
+  renderCalendar();
+  refreshUnscheduledDistances();
+}
+
+g("save-btn").addEventListener("click", saveEvent);
+g("delete-btn").addEventListener("click", deleteEvent);
+g("cancel-btn").addEventListener("click", closeEditor);
+g("editor-close-btn").addEventListener("click", closeEditor);
+g("unschedule-btn").addEventListener("click", () => { if (editingId) unscheduleEvent(editingId); });
+g("new-event-btn").addEventListener("click", () => openEditor(null));
+
+g("address-search-btn").addEventListener("click", () => lookupAddress(true));
+g("f-address").addEventListener("input", onAddressInput);
+g("f-address").addEventListener("blur", () => lookupAddress());
+
+// ── Editor tabs ────────────────────────────────────────────────
+function switchEditorTab(name) {
+  document.querySelectorAll(".editor-tab-btn").forEach(b =>
+    b.classList.toggle("active", b.dataset.tab === name));
+  g("etab-manual").classList.toggle("active", name === "manual");
+  g("etab-parse").classList.toggle("active", name === "parse");
+}
+document.querySelectorAll(".editor-tab-btn").forEach(b =>
+  b.addEventListener("click", () => switchEditorTab(b.dataset.tab))
+);
+
+// ── Calendar nav ──────────────────────────────────────────────
+g("prev-month").addEventListener("click", () => { viewStart = addDays(viewStart, -7); renderCalendar(); });
+g("next-month").addEventListener("click", () => { viewStart = addDays(viewStart, 7);  renderCalendar(); });
+
+// ── Legend ─────────────────────────────────────────────────────
+function renderLegend() {
+  const legend = g("legend");
+  legend.innerHTML = "";
+  ["fly","tog","hotell","aktivitet","transport","restaurant","annet"].forEach(t => {
+    const item = document.createElement("div");
+    item.className = "legend-item";
+    item.innerHTML = `<div class="legend-dot" style="background:${TYPE_COLORS[t]}"></div>${TYPE_LABELS[t]}`;
+    legend.appendChild(item);
+  });
+}
+
+// ── Claude parse ───────────────────────────────────────────────
+function extractJson(text) {
+  const open = { '[': ']', '{': '}' };
+  const start = Math.min(...[text.indexOf('['), text.indexOf('{')].filter(i => i !== -1));
+  if (start === Infinity) throw new Error("Fant ingen JSON i svaret.");
+  const opener = text[start];
+  const closer = open[opener];
+  let depth = 0, inStr = false, escape = false;
+  for (let i = start; i < text.length; i++) {
+    const c = text[i];
+    if (escape)         { escape = false; continue; }
+    if (c === '\\')     { escape = true;  continue; }
+    if (c === '"')      { inStr = !inStr; continue; }
+    if (inStr)          continue;
+    if (c === opener)   depth++;
+    else if (c === closer) { if (--depth === 0) return JSON.parse(text.slice(start, i + 1)); }
+  }
+  throw new Error("Ugyldig JSON.");
+}
+
+g("parse-btn").addEventListener("click", async () => {
+  const text = g("parse-input").value.trim();
+  if (!text) { alert("Lim inn tekst først."); return; }
+  if (!getApiKey()) { openApikeyModal(); return; }
+  const btn = g("parse-btn");
+  const status = g("parse-status");
+  btn.disabled = true;
+  status.textContent = "Analyserer…";
+  let raw;
+  const today_str = toDateStr(today);
+  try {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": getApiKey(),
+        "anthropic-version": "2023-06-01",
+        "anthropic-dangerous-direct-browser-access": "true"
+      },
+      body: JSON.stringify({
+        model: MODEL, max_tokens: 2048,
+        system: `Du er et reiseassistent-verktøy. Trekk ut ALLE bookinger fra teksten og svar KUN med en ren JSON-array. Ingen markdown – bare JSON.
+
+Dagens dato er ${today_str}. Bruk YYYY-MM-DD og HH:MM.
+
+Felter:
+- type: "fly" | "tog" | "hotell" | "aktivitet" | "transport" | "restaurant" | "annet"
+- title: kort tittel
+- flyFrom, flyTo: by/flyplass/stasjon for fly og tog, ellers ""
+- startDate: YYYY-MM-DD
+- endDate: YYYY-MM-DD eller ""
+- time, arrivalTime: "HH:MM" eller ""
+- carrier: flyselskap+nummer eller togoperatør+tognr., ellers ""
+- address: konkret gateadresse, by eller destinasjon som kan finnes i OpenStreetMap. For fly/tog: avgangsstedet.
+- ref: bekreftelsesnummer eller ""
+- url: booking-URL eller ""
+- notes: maks 60 tegn eller ""`,
+        messages: [{ role: "user", content: text }]
+      })
+    });
+    if (!res.ok) throw new Error(`API-feil ${res.status}: ${await res.text()}`);
+    const data = await res.json();
+    raw = data.content[0].text.trim();
+    const parsed = extractJson(raw);
+    const items  = Array.isArray(parsed) ? parsed : [parsed];
+    if (!items.length) throw new Error("Ingen bookinger funnet.");
+
+    if (items.length === 1) {
+      switchEditorTab("manual");
+      fillForm(items[0]);
+      status.textContent = "Klar til å lagre.";
+    } else {
+      items.forEach(b => events.push({ ...b, id: uid() }));
+      saveEvents();
+      renderCalendar();
+      renderEventList();
+      refreshUnscheduledDistances();
+      closeEditor();
+      alert(`${items.length} hendelser ble lagt til.`);
+    }
+  } catch (err) {
+    status.innerHTML = `<strong>Feil:</strong> ${escHtml(err.message)}`;
+    if (raw) status.innerHTML += `<br><br><strong>Råsvar:</strong><br><textarea readonly style="width:100%;height:100px;font-size:0.72rem;margin-top:4px;font-family:monospace">${escHtml(raw)}</textarea>`;
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+// ── View toggle ───────────────────────────────────────────────
+let currentView = "cal";
+
+function setView(view) {
+  currentView = view;
+  g("view-cal").classList.toggle("active", view === "cal");
+  g("view-map").classList.toggle("active", view === "map");
+  g("view-timeline").classList.toggle("active", view === "timeline");
+
+  // Timeline: full-area replacement
+  g("timeline-area").classList.toggle("visible", view === "timeline");
+  g("cal-view").classList.toggle("hidden", view === "timeline");
+
+  // Within cal-view, toggle calendar vs. map mode
+  g("cal-mode").classList.toggle("hidden", view === "map");
+  g("map-mode").classList.toggle("visible", view === "map");
+
+  if (view === "timeline") renderTimeline();
+  if (view === "map") setTimeout(showCenterMap, 30);
+}
+g("view-cal").addEventListener("click",      () => setView("cal"));
+g("view-map").addEventListener("click",      () => setView("map"));
+g("view-timeline").addEventListener("click", () => setView("timeline"));
+
+// ── Timeline ───────────────────────────────────────────────────
+function renderTimeline() {
+  const area = g("timeline-area");
+  area.innerHTML = "";
+  const scheduled = events.filter(e => e.startDate);
+  if (!scheduled.length) {
+    area.innerHTML = `<p style="color:#aaa;text-align:center;margin-top:3rem">Ingen planlagte hendelser ennå.</p>`;
+    return;
+  }
+  const dateSet = new Set();
+  scheduled.forEach(b => {
+    const end = b.endDate || b.startDate;
+    if (SPAN_TYPES.has(b.type) || (ROUTE_TYPES.has(b.type) && end > b.startDate)) {
+      let d = new Date(b.startDate + "T00:00:00");
+      const last = new Date(end + "T00:00:00");
+      while (d <= last) { dateSet.add(toDateStr(d)); d.setDate(d.getDate()+1); }
+    } else {
+      dateSet.add(b.startDate);
+      if (b.endDate && b.endDate !== b.startDate) dateSet.add(b.endDate);
+    }
+  });
+  const dates = Array.from(dateSet).sort();
+  const byMonth = {};
+  dates.forEach(d => { const k = d.slice(0,7); (byMonth[k] = byMonth[k] || []).push(d); });
+
+  Object.keys(byMonth).sort().forEach(mk => {
+    const [y, m] = mk.split("-").map(Number);
+    const sec = document.createElement("div");
+    sec.className = "timeline-month";
+    const hdr = document.createElement("div");
+    hdr.className = "timeline-month-title";
+    hdr.textContent = `${MONTHS_NO[m-1]} ${y}`;
+    sec.appendChild(hdr);
+    byMonth[mk].forEach(dateStr => {
+      const evs = getEventsForDate(dateStr);
+      if (!evs.length) return;
+      const day = parseInt(dateStr.split("-")[2]);
+      const dayName = DAY_NAMES[new Date(dateStr+"T00:00:00").getDay()];
+      const row = document.createElement("div");
+      row.className = "timeline-day";
+      row.innerHTML = `
+        <div class="timeline-date-col">
+          <div class="timeline-day-num">${day}</div>
+          <div class="timeline-day-name">${dayName}</div>
+        </div>
+        <div class="timeline-events" id="tl-${dateStr}"></div>
+      `;
+      const col = row.querySelector(`#tl-${dateStr}`);
+      evs.forEach(b => {
+        const card = document.createElement("div");
+        card.className = `timeline-card ${b.type}`;
+        let meta = "";
+        if (ROUTE_TYPES.has(b.type)) {
+          const depIcon = b.type === "tog" ? "🚆" : "🛫";
+          const arrIcon = b.type === "tog" ? "🚉" : "🛬";
+          if (b.time) meta += `${depIcon} ${b.time}`;
+          if (b.arrivalTime) meta += ` → ${arrIcon} ${b.arrivalTime}`;
+          if (b.carrier) meta += (meta ? " · " : "") + b.carrier;
+        } else {
+          if (b.time) meta += `🕐 ${b.time}`;
+          if (b.address) meta += (meta ? " · " : "") + b.address;
+        }
+        card.innerHTML = `
+          <div class="timeline-card-title">${escHtml(b.title)}</div>
+          ${meta ? `<div class="timeline-card-meta">${escHtml(meta)}</div>` : ""}
+        `;
+        card.addEventListener("click", () => {
+          setView("cal");
+          selectedDate = dateStr;
+          viewStart = getMondayOf(new Date(dateStr+"T00:00:00"));
+          renderCalendar();
+          openEditor(b.id);
+        });
+        col.appendChild(card);
+      });
+      sec.appendChild(row);
+    });
+    area.appendChild(sec);
+  });
+}
+
+// ── Center map (in cal-area) ──────────────────────────────────
+let centerMap = null;
+let centerMapLayers = [];
+
+function initCenterMap() {
+  if (centerMap) { centerMap.invalidateSize(); return; }
+  centerMap = L.map("center-map", { zoomControl: true }).setView([20, 15], 2);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    attribution: '© <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a>',
+    maxZoom: 19
+  }).addTo(centerMap);
+}
+
+function setCenterMapStatus(msg) {
+  const el = g("center-map-status");
+  if (msg) { el.textContent = msg; el.classList.add("visible"); }
+  else      { el.classList.remove("visible"); }
+}
+
+function setMapEmpty(visible) {
+  g("map-empty-overlay").classList.toggle("visible", visible);
+}
+
+function getSignificantDates() {
+  const set = new Set();
+  events.filter(e => e.startDate).forEach(b => {
+    const end = b.endDate || b.startDate;
+    if (SPAN_TYPES.has(b.type) || (ROUTE_TYPES.has(b.type) && end > b.startDate)) {
+      let d = new Date(b.startDate + "T00:00:00");
+      const last = new Date(end + "T00:00:00");
+      while (d <= last) { set.add(toDateStr(d)); d.setDate(d.getDate() + 1); }
+    } else {
+      set.add(b.startDate);
+      if (b.endDate && b.endDate !== b.startDate) set.add(b.endDate);
+    }
+  });
+  return Array.from(set).sort().filter(d => getEventsForDate(d).length > 0);
+}
+
+function updateMapDateBar() {
+  const titleEl = g("map-date-title");
+  const subEl   = g("map-date-sub");
+  if (!selectedDate) {
+    titleEl.textContent = "Ingen dato valgt";
+    subEl.textContent   = "";
+    g("prev-date").disabled = true;
+    g("next-date").disabled = true;
+    return;
+  }
+  const [y, m, d] = selectedDate.split("-").map(Number);
+  const dayName = ["Søndag","Mandag","Tirsdag","Onsdag","Torsdag","Fredag","Lørdag"][new Date(selectedDate+"T00:00:00").getDay()];
+  titleEl.textContent = `${dayName} ${d}. ${MONTHS_NO[m-1].toLowerCase()} ${y}`;
+  const evs = getEventsForDate(selectedDate);
+  subEl.textContent = evs.length === 0 ? "Ingen hendelser" :
+                      evs.length === 1 ? "1 hendelse"      :
+                      `${evs.length} hendelser`;
+
+  const sigDates = getSignificantDates();
+  const prevSig = sigDates.filter(d => d < selectedDate).pop()  || null;
+  const nextSig = sigDates.find(d => d > selectedDate)          || null;
+  g("prev-date").disabled = !prevSig;
+  g("next-date").disabled = !nextSig;
+  g("prev-date").dataset.target = prevSig || "";
+  g("next-date").dataset.target = nextSig || "";
+}
+
+function addEditLinkHandler(marker, eventId) {
+  marker.on("click", () => openEditor(eventId));
+}
+
+async function showCenterMap() {
+  initCenterMap();
+  setTimeout(() => centerMap && centerMap.invalidateSize(), 50);
+  updateMapDateBar();
+
+  centerMapLayers.forEach(m => centerMap.removeLayer(m));
+  centerMapLayers = [];
+  setMapEmpty(false);
+
+  const editingEv = editingId ? events.find(x => x.id === editingId) : null;
+  const editingUnscheduled = editingEv && !editingEv.startDate;
+
+  if (!selectedDate && !editingUnscheduled) {
+    setCenterMapStatus(null);
+    return;
+  }
+
+  const evs = selectedDate ? getEventsForDate(selectedDate) : [];
+  if (!evs.length && !editingUnscheduled) {
+    setCenterMapStatus(null);
+    setMapEmpty(true);
+    return;
+  }
+
+  setCenterMapStatus("Henter kart…");
+  const bounds = [];
+
+  async function placeEvent(b) {
+    if (ROUTE_TYPES.has(b.type)) {
+      const isTog = b.type === "tog";
+      const fromCoords = b.flyFrom ? await geocode(b.flyFrom) : null;
+      const toCoords   = b.flyTo   ? await geocode(b.flyTo)   : null;
+      if (fromCoords) {
+        const m = L.marker(fromCoords, { icon: makeMarkerIcon(TYPE_COLORS[b.type], 22) }).addTo(centerMap);
+        addEditLinkHandler(m, b.id);
+        centerMapLayers.push(m);
+        bounds.push(fromCoords);
+      }
+      if (toCoords) {
+        const m = L.marker(toCoords, { icon: makeMarkerIcon(TYPE_COLORS[b.type], 22) }).addTo(centerMap);
+        addEditLinkHandler(m, b.id);
+        centerMapLayers.push(m);
+        bounds.push(toCoords);
+      }
+      if (fromCoords && toCoords) {
+        const line = L.polyline([fromCoords, toCoords], {
+          color: TYPE_COLORS[b.type], weight: 3, opacity: 0.75,
+          dashArray: isTog ? "6,6" : null,
+        }).addTo(centerMap);
+        line.bindPopup(`<strong>${escHtml(b.title)}</strong><br>${escHtml(b.flyFrom)} → ${escHtml(b.flyTo)}${isTog ? "<br><em>(rett linje – ikke faktisk togtrasé)</em>" : ""}`);
+        centerMapLayers.push(line);
+      }
+    } else if (b.address) {
+      const coords = await geocode(b.address);
+      if (coords) {
+        const m = L.marker(coords, { icon: makeMarkerIcon(TYPE_COLORS[b.type] || "#6b7280", 22) }).addTo(centerMap);
+        addEditLinkHandler(m, b.id);
+        centerMapLayers.push(m);
+        bounds.push(coords);
+      }
+    }
+  }
+
+  for (const b of evs) await placeEvent(b);
+  if (editingUnscheduled) await placeEvent(editingEv);
+
+  setCenterMapStatus(null);
+  if (!bounds.length) {
+    setMapEmpty(true);
+    return;
+  }
+  if (bounds.length === 1) centerMap.setView(bounds[0], 13);
+  else centerMap.fitBounds(L.latLngBounds(bounds), { padding: [40,40] });
+}
+
+function navigateMapDate(dir) {
+  const sigDates = getSignificantDates();
+  if (!sigDates.length) return;
+  let target;
+  if (dir < 0) target = sigDates.filter(d => d < selectedDate).pop() || sigDates[0];
+  else         target = sigDates.find(d => d > selectedDate)         || sigDates[sigDates.length - 1];
+  if (!target || target === selectedDate) return;
+  selectedDate = target;
+  // Keep calendar + list in sync
+  viewStart = getMondayOf(new Date(target + "T00:00:00"));
+  renderCalendar();
+  renderEventList(true);
+  refreshUnscheduledDistances();
+  showCenterMap();
+}
+
+g("prev-date").addEventListener("click", () => navigateMapDate(-1));
+g("next-date").addEventListener("click", () => navigateMapDate(1));
+
+// ── iCal ───────────────────────────────────────────────────────
+let icalContent = null;
+g("ical-btn").addEventListener("click", () => g("ical-modal").classList.add("open"));
+g("ical-cancel").addEventListener("click", () => g("ical-modal").classList.remove("open"));
+g("ical-modal-close").addEventListener("click", () => g("ical-modal").classList.remove("open"));
+
+const icalFile = g("ical-file");
+const icalDrop = g("ical-drop");
+icalDrop.addEventListener("click", () => icalFile.click());
+icalDrop.addEventListener("dragover", e => { e.preventDefault(); icalDrop.classList.add("drag-over"); });
+icalDrop.addEventListener("dragleave", () => icalDrop.classList.remove("drag-over"));
+icalDrop.addEventListener("drop", e => {
+  e.preventDefault(); icalDrop.classList.remove("drag-over");
+  if (e.dataTransfer.files[0]) handleIcalFile(e.dataTransfer.files[0]);
+});
+icalFile.addEventListener("change", () => { if (icalFile.files[0]) handleIcalFile(icalFile.files[0]); });
+
+function handleIcalFile(file) {
+  g("ical-filename").textContent = file.name;
+  const reader = new FileReader();
+  reader.onload = e => {
+    icalContent = e.target.result;
+    g("ical-import-btn").disabled = false;
+    g("ical-status").textContent = "Fil klar til import.";
+  };
+  reader.readAsText(file);
+}
+
+g("ical-import-btn").addEventListener("click", () => {
+  if (!icalContent) return;
+  const imported = parseIcal(icalContent);
+  imported.forEach(b => events.push(b));
+  saveEvents();
+  renderCalendar();
+  renderEventList();
+  refreshUnscheduledDistances();
+  g("ical-modal").classList.remove("open");
+  g("ical-status").textContent = "";
+  icalContent = null;
+  g("ical-filename").textContent = "";
+  g("ical-import-btn").disabled = true;
+  alert(`${imported.length} hendelse(r) importert.`);
+});
+
+function parseIcal(text) {
+  const result = [];
+  text.split("BEGIN:VEVENT").slice(1).forEach(block => {
+    const get = key => {
+      const m = block.match(new RegExp(`${key}[^:]*:([^\\r\\n]+)`));
+      return m ? m[1].trim() : "";
+    };
+    const parseDate = s => s ? s.replace(/T.*/, "").replace(/(\d{4})(\d{2})(\d{2})/, "$1-$2-$3") : "";
+    const summary  = get("SUMMARY");
+    const location = get("LOCATION");
+    const url      = get("URL");
+    const desc     = get("DESCRIPTION");
+    const dtstart  = parseDate(get("DTSTART"));
+    const dtend    = parseDate(get("DTEND"));
+    if (!summary || !dtstart) return;
+    const tl = summary.toLowerCase();
+    let type = "annet";
+    if (/fly|flight|air|ryanair|sas|norwegian|klm/.test(tl)) type = "fly";
+    else if (/\btog\b|train|vy |sj |db |nsb |jernbane|railway/.test(tl)) type = "tog";
+    else if (/hotel|hotell|inn|resort|apartment|booking/.test(tl)) type = "hotell";
+    else if (/car|bil|rent|leiebil|hertz|avis/.test(tl)) type = "transport";
+    else if (/tour|activity|aktivitet|museum|park|concert/.test(tl)) type = "aktivitet";
+    else if (/restaurant|dinner|lunch|cafe/.test(tl)) type = "restaurant";
+    result.push({
+      id: uid(), type, title: summary,
+      address: location || "",
+      startDate: dtstart,
+      endDate: dtend && dtend !== dtstart ? dtend : "",
+      time: "", ref: "", url,
+      notes: desc.replace(/\\n/g," ").replace(/\\,/g,",").slice(0,200),
+    });
+  });
+  return result;
+}
+
+// ── API key modal ─────────────────────────────────────────────
+function openApikeyModal() {
+  g("apikey-input").value = getApiKey();
+  g("apikey-modal").classList.add("open");
+  setTimeout(() => g("apikey-input").focus(), 60);
+}
+function closeApikeyModal() { g("apikey-modal").classList.remove("open"); }
+
+g("apikey-btn").addEventListener("click", openApikeyModal);
+g("apikey-modal-close").addEventListener("click", closeApikeyModal);
+g("apikey-cancel").addEventListener("click", closeApikeyModal);
+g("apikey-save").addEventListener("click", () => {
+  const val = g("apikey-input").value.trim();
+  if (!val) { alert("Skriv inn en API-nøkkel."); return; }
+  setApiKey(val);
+  closeApikeyModal();
+});
+g("apikey-input").addEventListener("keydown", e => { if (e.key === "Enter") g("apikey-save").click(); });
+
+// ── Export / Import JSON ──────────────────────────────────────
+g("export-btn").addEventListener("click", () => {
+  const data = JSON.stringify(events, null, 2);
+  const blob = new Blob([data], { type: "application/json" });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement("a");
+  a.href     = url;
+  a.download = `ferie-backup-${toDateStr(today)}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+let importJsonData = null;
+
+g("import-json-btn").addEventListener("click", () => g("import-json-modal").classList.add("open"));
+g("import-json-cancel").addEventListener("click", () => closeImportJsonModal());
+g("import-json-modal-close").addEventListener("click", () => closeImportJsonModal());
+
+function closeImportJsonModal() {
+  g("import-json-modal").classList.remove("open");
+  importJsonData = null;
+  g("import-json-filename").textContent = "";
+  g("import-json-status").textContent   = "";
+  g("import-json-file").value           = "";
+  g("import-json-confirm-btn").disabled = true;
+  g("import-json-options").style.display = "none";
+}
+
+function handleImportJsonFile(file) {
+  g("import-json-filename").textContent = file.name;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const parsed = JSON.parse(e.target.result);
+      const arr = Array.isArray(parsed) ? parsed : null;
+      if (!arr) throw new Error("Filen er ikke en gyldig hendelsesliste.");
+      importJsonData = arr;
+      g("import-json-status").textContent = `${arr.length} hendelse(r) funnet i filen.`;
+      g("import-json-confirm-btn").disabled = false;
+      g("import-json-options").style.display = "";
+    } catch (err) {
+      g("import-json-status").textContent = "Feil: " + err.message;
+      importJsonData = null;
+      g("import-json-confirm-btn").disabled = true;
+      g("import-json-options").style.display = "none";
+    }
+  };
+  reader.readAsText(file);
+}
+
+const importJsonFile = g("import-json-file");
+const importJsonDrop = g("import-json-drop");
+importJsonDrop.addEventListener("click", () => importJsonFile.click());
+importJsonDrop.addEventListener("dragover", e => { e.preventDefault(); importJsonDrop.classList.add("drag-over"); });
+importJsonDrop.addEventListener("dragleave", () => importJsonDrop.classList.remove("drag-over"));
+importJsonDrop.addEventListener("drop", e => {
+  e.preventDefault(); importJsonDrop.classList.remove("drag-over");
+  if (e.dataTransfer.files[0]) handleImportJsonFile(e.dataTransfer.files[0]);
+});
+importJsonFile.addEventListener("change", () => { if (importJsonFile.files[0]) handleImportJsonFile(importJsonFile.files[0]); });
+
+g("import-json-confirm-btn").addEventListener("click", () => {
+  if (!importJsonData) return;
+  const mode = document.querySelector("input[name='import-mode']:checked").value;
+  if (mode === "replace") {
+    if (!confirm(`Dette vil slette alle ${events.length} eksisterende hendelse(r) og erstatte med ${importJsonData.length} fra filen. Fortsette?`)) return;
+    events = importJsonData.map(ev => ({ ...ev, id: ev.id || uid() }));
+  } else {
+    const existingIds = new Set(events.map(e => e.id));
+    let added = 0;
+    importJsonData.forEach(ev => {
+      if (!existingIds.has(ev.id)) { events.push({ ...ev, id: ev.id || uid() }); added++; }
+    });
+    alert(`${added} nye hendelse(r) lagt til (${importJsonData.length - added} var allerede i listen).`);
+  }
+  saveEvents();
+  renderCalendar();
+  renderEventList();
+  refreshUnscheduledDistances();
+  closeImportJsonModal();
+  if (mode === "replace") alert(`${importJsonData.length} hendelse(r) importert.`);
+});
+
+// ── Init ───────────────────────────────────────────────────────
+renderLegend();
+renderEventList();
+refreshUnscheduledDistances();
+
+if (events.length > 0) {
+  const todayStr    = toDateStr(today);
+  const firstFuture = events.filter(e => e.startDate)
+    .map(e => e.startDate).filter(d => d >= todayStr).sort()[0];
+  if (firstFuture) viewStart = getMondayOf(new Date(firstFuture + "T00:00:00"));
+}
+renderCalendar();
+</script>
+</body>
+</html>

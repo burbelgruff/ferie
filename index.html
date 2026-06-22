@@ -2091,7 +2091,6 @@ g("ical-modal-close").addEventListener("click", () => g("ical-modal").classList.
 
 const icalFile = g("ical-file");
 const icalDrop = g("ical-drop");
-icalDrop.addEventListener("click", () => icalFile.click());
 icalDrop.addEventListener("dragover", e => { e.preventDefault(); icalDrop.classList.add("drag-over"); });
 icalDrop.addEventListener("dragleave", () => icalDrop.classList.remove("drag-over"));
 icalDrop.addEventListener("drop", e => {
@@ -2233,7 +2232,6 @@ function handleImportJsonFile(file) {
 
 const importJsonFile = g("import-json-file");
 const importJsonDrop = g("import-json-drop");
-importJsonDrop.addEventListener("click", () => importJsonFile.click());
 importJsonDrop.addEventListener("dragover", e => { e.preventDefault(); importJsonDrop.classList.add("drag-over"); });
 importJsonDrop.addEventListener("dragleave", () => importJsonDrop.classList.remove("drag-over"));
 importJsonDrop.addEventListener("drop", e => {

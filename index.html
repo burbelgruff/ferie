@@ -561,7 +561,10 @@
     .ical-drop:hover, .ical-drop.drag-over {
       background: #e8f4ff; border-color: #4a7fa5;
     }
-    .ical-drop input { display: none; }
+    .ical-drop input {
+      position: absolute; opacity: 0; pointer-events: none;
+      width: 1px; height: 1px; overflow: hidden;
+    }
 
     @media (max-width: 1100px) {
       .editor-panel { width: 320px; }

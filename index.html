@@ -1027,8 +1027,7 @@ async function geocode(query) {
   if (Object.prototype.hasOwnProperty.call(geocodeCache, key)) return geocodeCache[key];
   try {
     const res = await fetch(
-      `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1`,
-      { headers: { "User-Agent": "Ferieplanlegger/1.0" } }
+      `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1`
     );
     const data = await res.json();
     const result = data.length ? [parseFloat(data[0].lat), parseFloat(data[0].lon)] : null;

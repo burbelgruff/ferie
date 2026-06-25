@@ -1024,6 +1024,13 @@ const geocodeCache = JSON.parse(localStorage.getItem("ferie-geocache") || "{}");
 Object.keys(geocodeCache).forEach(k => { if (geocodeCache[k] === null) delete geocodeCache[k]; });
 localStorage.setItem("ferie-geocache", JSON.stringify(geocodeCache));
 
+function routeGeoQuery(addr) {
+  if (!addr) return addr;
+  const iata = addr.match(/\(([A-Z]{3})\)/);
+  if (iata) return iata[1] + " airport";
+  return addr.replace(/\s*\([^)]*\)/, "").trim();
+}
+
 async function geocode(query) {
   if (!query) return null;
   const key = query.toLowerCase().trim();
@@ -2027,8 +2034,8 @@ async function showCenterMap() {
   async function placeEvent(b) {
     if (ROUTE_TYPES.has(b.type)) {
       const isTog = b.type === "tog";
-      const fromCoords = b.flyFrom ? await geocode(b.flyFrom) : null;
-      const toCoords   = b.flyTo   ? await geocode(b.flyTo)   : null;
+      const fromCoords = b.flyFrom ? await geocode(routeGeoQuery(b.flyFrom)) : null;
+      const toCoords   = b.flyTo   ? await geocode(routeGeoQuery(b.flyTo))   : null;
       if (fromCoords) {
         const m = L.marker(fromCoords, { icon: makeMarkerIcon(TYPE_COLORS[b.type], 22) }).addTo(centerMap);
         addEditLinkHandler(m, b.id);

@@ -587,6 +587,8 @@
       <button class="view-toggle-btn" id="view-map">🗺 Kart</button>
       <button class="view-toggle-btn" id="view-timeline">Tidslinje</button>
     </div>
+    <span id="version-label" style="font-size:0.72rem;color:#7aa8cc"></span>
+    <button class="topbar-btn secondary" id="debug-btn" type="button">🛠 Debug</button>
     <button class="topbar-btn secondary" id="apikey-btn" type="button">🔑 API-nøkkel</button>
     <button class="topbar-btn secondary" id="export-btn" type="button">Eksporter</button>
     <button class="topbar-btn secondary" id="import-json-btn" type="button">Importer JSON</button>
@@ -930,6 +932,7 @@
 
 <script>
 const MODEL = "claude-sonnet-4-6";
+const VERSION = "v6";
 
 function getApiKey() { return localStorage.getItem("ferie-api-key") || ""; }
 function setApiKey(k) { localStorage.setItem("ferie-api-key", k.trim()); }
@@ -2262,6 +2265,39 @@ function parseIcal(text) {
   });
   return result;
 }
+
+// ── Debug ─────────────────────────────────────────────────────
+g("version-label").textContent = VERSION;
+
+g("debug-btn").addEventListener("click", async () => {
+  const lines = [`Versjon: ${VERSION}`, ""];
+
+  const testCases = [
+    ["Jeju (CJU)",   true],
+    ["Seoul (GMP)",  true],
+    ["Busan (PUS)",  true],
+    ["Oslo (OSL)",   true],
+    ["35.11408490388219, 129.0375359333979", false],
+    ["Via Labicana 124, Roma", false],
+  ];
+
+  lines.push("── Geocoding-test ──");
+  for (const [addr, isFly] of testCases) {
+    const r = isFly ? await geocodeRoute(addr, true) : await geocode(addr);
+    lines.push(`${addr}\n→ ${r ? r.join(", ") : "NULL"}`);
+  }
+
+  lines.push("");
+  lines.push(`AIRPORTS["CJU"]: ${JSON.stringify(AIRPORTS["CJU"])}`);
+  lines.push(`AIRPORTS["GMP"]: ${JSON.stringify(AIRPORTS["GMP"])}`);
+
+  const cache = JSON.parse(localStorage.getItem("ferie-geocache") || "{}");
+  lines.push(`Cache-poster: ${Object.keys(cache).length}`);
+  const bad = Object.entries(cache).filter(([,v]) => v === null).map(([k]) => k);
+  if (bad.length) lines.push(`Null-verdier i cache: ${bad.join(", ")}`);
+
+  alert(lines.join("\n"));
+});
 
 // ── API key modal ─────────────────────────────────────────────
 function openApikeyModal() {
